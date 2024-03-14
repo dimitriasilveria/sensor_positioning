@@ -8,26 +8,27 @@ import datetime
 
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
+import tensorflow
+# def import_tensorflow():
+#     # Filter tensorflow version warnings
+#     import os
+#     # https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints/40426709
+#     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
+#     import warnings
+#     # https://stackoverflow.com/questions/15777951/how-to-suppress-pandas-future-warning
+#     warnings.simplefilter(action='ignore', category=FutureWarning)
+#     warnings.simplefilter(action='ignore', category=Warning)
+#     import tensorflow 
+#     tensorflow.get_logger().setLevel('INFO')
+#     tensorflow.autograph.set_verbosity(0)
+#     import logging
+#     tensorflow.get_logger().setLevel(logging.ERROR)
+#     return tensorflow
 
-def import_tensorflow():
-    # Filter tensorflow version warnings
-    import os
-    # https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints/40426709
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
-    import warnings
-    # https://stackoverflow.com/questions/15777951/how-to-suppress-pandas-future-warning
-    warnings.simplefilter(action='ignore', category=FutureWarning)
-    warnings.simplefilter(action='ignore', category=Warning)
-    import tensorflow as tf
-    tf.get_logger().setLevel('INFO')
-    tf.autograph.set_verbosity(0)
-    import logging
-    tf.get_logger().setLevel(logging.ERROR)
-    return tf
-tf = import_tensorflow()
+# tensorf = import_tensorflow()
 
 
-import tensorflow.contrib.layers as layers
+import tensorflow.layers as layers
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
@@ -58,42 +59,79 @@ def parse_args():
     parser.add_argument("--plots-dir", type=str, default="./learning_curves/", help="directory where plot data is saved")
     return parser.parse_args()
 
-def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
+def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
-    with tf.variable_scope(scope, reuse=reuse):
-        out = input
-        out = layers.conv2d(out, kernel_size=2, num_outputs=num_units, activation_fn=tf.nn.relu)
-        out = layers.conv2d(num_units,kernel_size=2, num_outputs=num_units/2, activation_fn=tf.nn.relu)
-        out = layers.fully_connected(num_units/2, num_outputs=num_units/2, activation_fn=None)
-        out = layers.fully_connected(num_units/2, num_outputs=num_outputs, activation_fn=None)
-        return out
+    with tensorflow.variable_scope(scope, reuse=reuse):
+        conv1 = layers.Conv3D(num_units, kernel_size=(2,2,1), strides=[1,1,1], padding='same', activation=tensorflow.nn.relu)(input)
+        # Second Conv3D layer
+        conv2 = layers.Conv3D(num_units, kernel_size=(2, 2, 1), padding='same', activation=tensorflow.nn.relu)(conv1)
+        # Flatten the output of the second convolutional layer
+        flat = tensorflow.layers.Flatten()(conv2)
+
+        # First dense layer
+        dense1 = tensorflow.layers.Dense(units=num_units, activation=tensorflow.nn.relu)(flat)
+
+        # Second dense layer (output layer)
+        outputs = tensorflow.layers.Dense(units=num_outputs, activation=None)(dense1)
+        # out = input
+        # out = layers.conv3d(out, kernel_size=[2,2,1], num_outputs=num_units, activation=tensorflow.nn.relu)
+        # out = layers.conv3d(num_units,kernel_size=2, num_outputs=num_units/2, activation=tensorflow.nn.relu)
+        # out = layers.dense(num_units/2, num_outputs=num_units/2, activation=None)
+        # out = layers.dense(num_units/2, num_outputs=num_outputs, activation=None)
+        return outputs
+
+def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
+    # This model takes as input an observation and returns values of all actions
+    with tensorflow.compat.v1.variable_scope(scope, reuse=reuse):
+        conv1 = tensorflow.compat.v1.layers.Conv3D(filters=3, kernel_size=4, data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input_obs)
+        # Second Conv3D layer
+        conv2 = tensorflow.compat.v1.layers.Conv3D(filters=3, kernel_size=4,data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
+        # Flatten the output of the second convolutional layer
+        flat = tensorflow.layers.Flatten()(conv2)
+        # Concatenate the flattened layer with another input
+        for input in input_act:
+            concatenated_inputs = tensorflow.concat([flat,input],axis=1)
+        # First dense layer
+        dense1 = tensorflow.layers.Dense(units=num_units, activation=tensorflow.nn.relu)(concatenated_inputs)
+
+        # Second dense layer (output layer)
+        outputs = tensorflow.layers.Dense(units=num_outputs, activation=None)(dense1)
+        # out = input
+        # out = layers.conv3d(out, kernel_size=[2,2,1], num_outputs=num_units, activation=tensorflow.nn.relu)
+        # out = layers.conv3d(num_units,kernel_size=2, num_outputs=num_units/2, activation=tensorflow.nn.relu)
+        # out = layers.dense(num_units/2, num_outputs=num_units/2, activation=None)
+        # out = layers.dense(num_units/2, num_outputs=num_outputs, activation=None)
+        return outputs
 
 def make_env(scenario_name, arglist, benchmark=False):
+    
     from multiagent.environment import MultiAgentEnv
     import multiagent.scenarios as scenarios
 
     # load scenario from script
-    scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=3, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="image")
+    obs_mode = "image"
+    scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode=obs_mode)
     # create world
     world = scenario.make_world()
     # create multiagent environment
     if benchmark:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
+        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,observation_mode=obs_mode)
     else:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
+        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,observation_mode=obs_mode)
     return env
 
 def get_trainers(env, num_adversaries, obs_shape_n, arglist):
     trainers = []
-    model = mlp_model
+    model_actor = mlp_actor
+    model_critic = mlp_critic
     trainer = MADDPGAgentTrainer
     for i in range(num_adversaries):
         trainers.append(trainer(
-            "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
+            "agent_%d" % i, model_actor, model_critic, obs_shape_n, env.action_space, i, arglist,
             local_q_func=(arglist.adv_policy=='ddpg')))
     for i in range(num_adversaries, env.n):
         trainers.append(trainer(
-            "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
+            "agent_%d" % i, model_actor, model_critic, obs_shape_n, env.action_space, i, arglist,
             local_q_func=(arglist.good_policy=='ddpg')))
     return trainers
 
@@ -108,7 +146,8 @@ def train(arglist):
         env.reset()
         #env.render()
         # Create agent trainers
-        obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
+        #ic(env.observation_space)
+        obs_shape_n = [env.observation_space[0].shape]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
@@ -129,21 +168,21 @@ def train(arglist):
         final_ep_rewards = []  # sum of rewards for training curve
         final_ep_ag_rewards = []  # agent rewards for training curve
         agent_info = [[[]]]  # placeholder for benchmarking info
-        saver = tf.compat.v1.train.Saver()
+        saver = tensorflow.compat.v1.train.Saver()
         obs_n = env.reset()
         
         episode_step = 0
         train_step = 0
         t_start = time.time()
-        #tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+        #tensorboard_callback = tensorf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
-        sess = tf.compat.v1.Session()
-        writer = tf.summary.FileWriter(train_log_dir,sess.graph)
-        reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
-        tf.summary.scalar('reward', reward_tensor)
-        merged = tf.summary.merge_all()
-        tf.global_variables_initializer().run()
+        sess = tensorflow.compat.v1.Session()
+        writer = tensorflow.summary.FileWriter(train_log_dir,sess.graph)
+        reward_tensor = tensorflow.placeholder(tensorflow.float32, shape=(), name='reward')
+        tensorflow.summary.scalar('reward', reward_tensor)
+        merged = tensorflow.summary.merge_all()
+        tensorflow.global_variables_initializer().run()
         rollout = 0
         print('Starting iterations...')
         while True:
@@ -174,7 +213,7 @@ def train(arglist):
                 episode_rewards[-1] += rew
                 agent_rewards[i][-1] += rew
             
-            #reward_t = tf.convert_to_tensor(episode_rewards[-1], dtype=tf.float32, dtype_hint=None, name=None) 
+            #reward_t = tensorf.convert_to_tensor(episode_rewards[-1], dtype=tensorf.float32, dtype_hint=None, name=None) 
 
             # ic(merged)
             # ic(reward_t)
@@ -182,7 +221,7 @@ def train(arglist):
                 rollout = sum(episode_rewards[-10:])/10
             summary, _ = sess.run([merged, reward_tensor], feed_dict={reward_tensor: rollout})
             writer.add_summary(summary, train_step)
-            #accuracy_scalar = tf.summary.scalar("episode_reward",episode_rewards[-1])
+            #accuracy_scalar = tensorf.summary.scalar("episode_reward",episode_rewards[-1])
             #writer.add_scalar(accuracy_scalar,episode_step).eval()
             over = False
             for i in range(0, 3):

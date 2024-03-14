@@ -2,7 +2,7 @@ import collections
 import numpy as np
 import os
 import tensorflow as tf
-
+from icecream import ic
 def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, axis=None if axis is None else [axis], keep_dims = keepdims)
 def mean(x, axis=None, keepdims=False):
@@ -81,7 +81,7 @@ class BatchInput(PlacholderTfInput):
         name: str
             name of the underlying placeholder
         """
-        super().__init__(tf.placeholder(dtype, [None] + list(shape), name=name))
+        super().__init__(tf.compat.v1.placeholder(dtype, [1,list(shape)[2], list(shape)[0], list(shape)[1],1], name=name))
 
 
 class Uint8Input(PlacholderTfInput):
