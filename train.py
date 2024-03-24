@@ -8,27 +8,27 @@ import datetime
 
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
-import tensorflow
-# def import_tensorflow():
-#     # Filter tensorflow version warnings
-#     import os
-#     # https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints/40426709
-#     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
-#     import warnings
-#     # https://stackoverflow.com/questions/15777951/how-to-suppress-pandas-future-warning
-#     warnings.simplefilter(action='ignore', category=FutureWarning)
-#     warnings.simplefilter(action='ignore', category=Warning)
-#     import tensorflow 
-#     tensorflow.get_logger().setLevel('INFO')
-#     tensorflow.autograph.set_verbosity(0)
-#     import logging
-#     tensorflow.get_logger().setLevel(logging.ERROR)
-#     return tensorflow
+#import tensorflow
+def import_tensorflow():
+    # Filter tensorflow version warnings
+    import os
+    # https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints/40426709
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
+    import warnings
+    # https://stackoverflow.com/questions/15777951/how-to-suppress-pandas-future-warning
+    warnings.simplefilter(action='ignore', category=FutureWarning)
+    warnings.simplefilter(action='ignore', category=Warning)
+    import tensorflow 
+    tensorflow.get_logger().setLevel('INFO')
+    tensorflow.autograph.set_verbosity(0)
+    import logging
+    tensorflow.get_logger().setLevel(logging.ERROR)
+    return tensorflow
 
-# tensorf = import_tensorflow()
+tensorflow = import_tensorflow()
 
 
-import tensorflow.layers as layers
+import tensorflow.compat.v1.layers as layers
 
 def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
@@ -62,9 +62,10 @@ def parse_args():
 def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
     with tensorflow.variable_scope(scope, reuse=reuse):
-        conv1 = layers.Conv3D(num_units, kernel_size=(2,2,1), strides=[1,1,1], padding='same', activation=tensorflow.nn.relu)(input)
+        input_shape = (1, 10, 10, 7)
+        conv1 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input)
         # Second Conv3D layer
-        conv2 = layers.Conv3D(num_units, kernel_size=(2, 2, 1), padding='same', activation=tensorflow.nn.relu)(conv1)
+        conv2 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
         flat = tensorflow.layers.Flatten()(conv2)
 
@@ -83,9 +84,10 @@ def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=Non
 def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
     with tensorflow.compat.v1.variable_scope(scope, reuse=reuse):
-        conv1 = tensorflow.compat.v1.layers.Conv3D(filters=3, kernel_size=4, data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input_obs)
+        input_shape = (1, 10, 10, 7)
+        conv1 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input_obs)
         # Second Conv3D layer
-        conv2 = tensorflow.compat.v1.layers.Conv3D(filters=3, kernel_size=4,data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
+        conv2 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
         flat = tensorflow.layers.Flatten()(conv2)
         # Concatenate the flattened layer with another input
@@ -178,10 +180,10 @@ def train(arglist):
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
         sess = tensorflow.compat.v1.Session()
-        writer = tensorflow.summary.FileWriter(train_log_dir,sess.graph)
+        writer = tensorflow.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
         reward_tensor = tensorflow.placeholder(tensorflow.float32, shape=(), name='reward')
-        tensorflow.summary.scalar('reward', reward_tensor)
-        merged = tensorflow.summary.merge_all()
+        tensorflow.compat.v1.summary.scalar('reward', reward_tensor)
+        merged = tensorflow.compat.v1.summary.merge_all()
         tensorflow.global_variables_initializer().run()
         rollout = 0
         print('Starting iterations...')
@@ -215,8 +217,6 @@ def train(arglist):
             
             #reward_t = tensorf.convert_to_tensor(episode_rewards[-1], dtype=tensorf.float32, dtype_hint=None, name=None) 
 
-            # ic(merged)
-            # ic(reward_t)
             if len(episode_rewards)%10==0:
                 rollout = sum(episode_rewards[-10:])/10
             summary, _ = sess.run([merged, reward_tensor], feed_dict={reward_tensor: rollout})
@@ -224,16 +224,16 @@ def train(arglist):
             #accuracy_scalar = tensorf.summary.scalar("episode_reward",episode_rewards[-1])
             #writer.add_scalar(accuracy_scalar,episode_step).eval()
             over = False
-            for i in range(0, 3):
-                if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
-                    over = True
+            # for i in range(0, 3):
+            #     if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
+            #         over = True
 
-            if over:
+            # if over:
 
-                obs_n = env.reset()
-                episode_step = 0
-                episode_rewards = episode_rewards[0:-1]
-                episode_rewards.append(0)
+            #     obs_n = env.reset()
+            #     episode_step = 0
+            #     episode_rewards = episode_rewards[0:-1]
+            #     episode_rewards.append(0)
 
 
 

@@ -106,8 +106,6 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)
 
         target_q_values = U.function(obs_ph_n + act_ph_n, target_q)
-        # ic(obs_ph_n)
-        # ic(act_ph_n)
         return train, update_target_q, {'q_values': q_values, 'target_q_values': target_q_values}
 
 class MADDPGAgentTrainer(AgentTrainer):
@@ -119,7 +117,6 @@ class MADDPGAgentTrainer(AgentTrainer):
         obs_ph_n = []
         #for i in range(self.n):
         obs_ph_n.append(U.BatchInput(obs_shape_n[0], name="observation"+str(0)).get())
-        ic(obs_ph_n)
         # Create all the functions necessary to train the model
         self.q_train, self.q_update, self.q_debug = q_train(
             scope=self.name,

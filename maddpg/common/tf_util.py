@@ -81,7 +81,7 @@ class BatchInput(PlacholderTfInput):
         name: str
             name of the underlying placeholder
         """
-        super().__init__(tf.compat.v1.placeholder(dtype, [1,list(shape)[2], list(shape)[0], list(shape)[1],1], name=name))
+        super().__init__(tf.compat.v1.placeholder(dtype, [1,list(shape)[0], list(shape)[1], list(shape)[2]], name=name))
 
 
 class Uint8Input(PlacholderTfInput):
