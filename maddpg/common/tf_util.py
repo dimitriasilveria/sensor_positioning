@@ -2,6 +2,7 @@ import collections
 import numpy as np
 import os
 import tensorflow as tf
+from icecream import ic
 
 def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, axis=None if axis is None else [axis], keep_dims = keepdims)
@@ -326,6 +327,7 @@ class _Function(object):
         for inpt in self.givens:
             feed_dict[inpt] = feed_dict.get(inpt, self.givens[inpt])
         results = get_session().run(self.outputs_update, feed_dict=feed_dict)[:-1]
+        ic(self.outputs_update)
         if self.check_nan:
             if any(np.isnan(r).any() for r in results):
                 raise RuntimeError("Nan detected")

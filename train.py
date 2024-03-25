@@ -33,21 +33,22 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
-    parser.add_argument("--max-episode-len", type=int, default=120, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=150000000, help="number of episodes")
+    parser.add_argument("--max-episode-len", type=int, default=10, help="maximum episode length")
+    parser.add_argument("--num-episodes", type=int, default=10000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=10, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
-    parser.add_argument("--exp-name", type=str, default=None, help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="./tmp/policy/", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
+    parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
@@ -67,18 +68,17 @@ def mlp_model(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=Non
         return out
 
 def make_env(scenario_name, arglist, benchmark=False):
-    from multiagent.environment import MultiAgentEnv
-    import multiagent.scenarios as scenarios
-
+    
+    # from multiagent.environment import MultiAgentEnv
+    # import multiagent.scenarios as scenarios
+    from multiagent.survey_environment import SurveyEnv
     # load scenario from script
-    scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=3, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="dense")
-    # create world
-    world = scenario.make_world()
+    # scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode=obs_mode)
+    # # create world
+    # world = scenario.make_world()
     # create multiagent environment
-    if benchmark:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
-    else:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
+    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="dense")
+    env.reset()
     return env
 
 def get_trainers(env, num_adversaries, obs_shape_n, arglist):
@@ -107,7 +107,6 @@ def train(arglist):
         #env.render()
         # Create agent trainers
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
-        ic(obs_shape_n)
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
@@ -134,17 +133,26 @@ def train(arglist):
         episode_step = 0
         train_step = 0
         t_start = time.time()
-        log_dir = "./my_logs/"
-        tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = log_dir + current_time + '/train'
+        train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
         sess = tf.compat.v1.Session()
-        writer = tf.summary.FileWriter(log_dir,sess.graph)
-        reward_tensor = tf.placeholder(tf.float32, shape=[arglist.num_episodes], name='reward')
-        tf.summary.scalar('reward', reward_tensor)
-        merged = tf.summary.merge_all()
-        tf.global_variables_initializer().run()
+        writer = tf.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
+        reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
+        tf.compat.v1.summary.scalar('reward', reward_tensor)
+        agents_tensors = {}
+        losses = {}
+        names = []
         
+        
+        for i in range(env.n):
+            agent_name = 'agent'+str(i)
+            names.append(agent_name)
+            agents_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_agent'+str(i), agents_tensors[agent_name])
+        merged = tf.compat.v1.summary.merge_all()
+        tf.global_variables_initializer().run()
+        rollout = 0
+
         print('Starting iterations...')
         while True:
             # get action
@@ -176,13 +184,9 @@ def train(arglist):
             
             reward_t = tf.convert_to_tensor(episode_rewards[-1], dtype=tf.float32, dtype_hint=None, name=None) 
 
-            # ic(merged)
-            # ic(reward_t)
-            summary, _ = sess.run([merged, reward_tensor], feed_dict={reward_tensor: episode_rewards})
-            ic(summary)
-            writer.add_summary(summary, episode_step)
-            #accuracy_scalar = tf.summary.scalar("episode_reward",episode_rewards[-1])
-            #writer.add_scalar(accuracy_scalar,episode_step).eval()
+
+
+
             over = False
             for i in range(0, 3):
                 if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
@@ -232,8 +236,25 @@ def train(arglist):
             loss = None
             for agent in trainers:
                 agent.preupdate()
+            i=0
             for agent in trainers:
                 loss = agent.update(trainers, train_step)
+                agent_name = 'agent'+str(i)
+                if loss is not None:
+                    losses[agent_name] = loss
+                    ic(loss)
+                else:
+                    losses[agent_name] = 0.0
+                i+=1
+
+            if len(episode_rewards)%10==0:
+                rollout = sum(episode_rewards[-10:])/10
+            dict_rew = {reward_tensor: rollout}
+            #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+            dict_loss={agents_tensors[agent_name]:losses[agent_name] for agent_name in names}
+
+            sum_1, sum_2, sum_3, _ = sess.run([merged, reward_tensor]+[agents_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss})
+            writer.add_summary(sum_1, train_step)
 
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
@@ -243,11 +264,11 @@ def train(arglist):
                 ##
                 print("steps: {}, episodes: {}, mean episode reward: {},  time: {}".format(
                         train_step, len(episode_rewards), np.mean(episode_rewards[-arglist.save_rate:]), round(time.time()-t_start, 3)))
-            else:
-                continue
-                print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
-                    train_step, len(episode_rewards), np.mean(episode_rewards[-arglist.save_rate:]),
-                    [np.mean(rew[-arglist.save_rate:]) for rew in agent_rewards], round(time.time()-t_start, 3)))
+            # else:
+            #     #continue
+            #     print("steps: {}, episodes: {}, mean episode reward: {}, agent episode reward: {}, time: {}".format(
+            #         train_step, len(episode_rewards), np.mean(episode_rewards[-arglist.save_rate:]),
+            #         [np.mean(rew[-arglist.save_rate:]) for rew in agent_rewards], round(time.time()-t_start, 3)))
             t_start = time.time()
             # Keep track of final episode reward
             final_ep_rewards.append(np.mean(episode_rewards[-arglist.save_rate:]))
