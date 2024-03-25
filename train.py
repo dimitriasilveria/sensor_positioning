@@ -34,15 +34,15 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
-    parser.add_argument("--max-episode-len", type=int, default=120, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=10, help="number of episodes")
+    parser.add_argument("--max-episode-len", type=int, default=10, help="maximum episode length")
+    parser.add_argument("--num-episodes", type=int, default=10000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=10, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
@@ -107,19 +107,16 @@ def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=6
 
 def make_env(scenario_name, arglist, benchmark=False):
     
-    from multiagent.environment import MultiAgentEnv
-    import multiagent.scenarios as scenarios
-
+    # from multiagent.environment import MultiAgentEnv
+    # import multiagent.scenarios as scenarios
+    from multiagent.survey_environment import SurveyEnv
     # load scenario from script
-    obs_mode = "image"
-    scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode=obs_mode)
-    # create world
-    world = scenario.make_world()
+    # scenario = scenarios.load(scenario_name + ".py").Scenario(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode=obs_mode)
+    # # create world
+    # world = scenario.make_world()
     # create multiagent environment
-    if benchmark:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,observation_mode=obs_mode)
-    else:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,observation_mode=obs_mode)
+    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="image")
+    env.reset()
     return env
 
 def get_trainers(env, num_adversaries, obs_shape_n, arglist):
@@ -252,7 +249,7 @@ def train(arglist):
                 continue
             # increment global step counter
             train_step += 1
-            ic(train_step)
+            #ic(train_step)
             # for benchmarking learned policies
             if arglist.benchmark:
                 for i, info in enumerate(info_n):

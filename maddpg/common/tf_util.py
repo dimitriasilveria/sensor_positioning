@@ -81,7 +81,7 @@ class BatchInput(PlacholderTfInput):
         name: str
             name of the underlying placeholder
         """
-        super().__init__(tf.compat.v1.placeholder(dtype, [1,list(shape)[0], list(shape)[1], list(shape)[2]], name=name))
+        super().__init__(tf.compat.v1.placeholder(dtype, [None,list(shape)[0], list(shape)[1], list(shape)[2]], name=name))
 
 
 class Uint8Input(PlacholderTfInput):
@@ -320,6 +320,7 @@ class _Function(object):
                 kwargs_passed_inpt_names.add(inpt_name)
                 self._feed_input(feed_dict, inpt, kwargs.pop(inpt_name))
             else:
+                ic(self.givens)
                 assert inpt in self.givens, "Missing argument " + inpt_name
         assert len(kwargs) == 0, "Function got extra arguments " + str(list(kwargs.keys()))
         # Update feed dict with givens.

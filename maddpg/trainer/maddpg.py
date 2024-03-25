@@ -33,7 +33,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, grad
 
         # set up placeholders
         obs_ph_n = make_obs_ph_n
-        act_ph_n = [act_pdtype_n[i].sample_placeholder([1], name="action"+str(i)) for i in range(len(act_space_n))]
+        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
 
         p_input = obs_ph_n[p_index]
         p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]), scope="p_func", num_units=num_units)
@@ -84,6 +84,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
 
         #q_input = tf.concat(obs_ph_n + act_ph_n, 1)
         if local_q_func:
+            ic()
             q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
         #for obs in  obs_ph_n
         q = q_func(obs_ph_n[0], act_ph_n, 1, scope="q_func", num_units=num_units)[:,0]
@@ -180,6 +181,7 @@ class MADDPGAgentTrainer(AgentTrainer):
         target_q = 0.0
         for i in range(num_sample):
             target_act_next_n = [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
+            #ic(target_act_next_n)
             target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
             target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         target_q /= num_sample
