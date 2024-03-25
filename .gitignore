@@ -165,3 +165,5 @@ tmp
 benchmark_files
 learning_curves
 mpe-surveillance
+
+.vscode/
