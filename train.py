@@ -33,7 +33,7 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
-    parser.add_argument("--max-episode-len", type=int, default=10, help="maximum episode length")
+    parser.add_argument("--max-episode-len", type=int, default=120, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=10000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
@@ -41,7 +41,7 @@ def parse_args():
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=10, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
@@ -139,16 +139,20 @@ def train(arglist):
         writer = tf.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
         reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
         tf.compat.v1.summary.scalar('reward', reward_tensor)
-        agents_tensors = {}
-        losses = {}
+        agents_p_tensors = {}
+        agents_q_tensors = {}
+        losses_p = {}
+        losses_q = {}
         names = []
         
         
         for i in range(env.n):
             agent_name = 'agent'+str(i)
             names.append(agent_name)
-            agents_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_agent'+str(i))
-            tf.compat.v1.summary.scalar('loss_agent'+str(i), agents_tensors[agent_name])
+            agents_p_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_p_agent'+str(i), agents_p_tensors[agent_name])
+            agents_q_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_q_agent'+str(i), agents_q_tensors[agent_name])
         merged = tf.compat.v1.summary.merge_all()
         tf.global_variables_initializer().run()
         rollout = 0
@@ -241,19 +245,21 @@ def train(arglist):
                 loss = agent.update(trainers, train_step)
                 agent_name = 'agent'+str(i)
                 if loss is not None:
-                    losses[agent_name] = loss
-                    ic(loss)
+                    losses_p[agent_name] = loss[1]
+                    losses_q[agent_name] = loss[0]
                 else:
-                    losses[agent_name] = 0.0
+                    losses_p[agent_name] = 0.0
+                    losses_q[agent_name] = 0.0
                 i+=1
 
             if len(episode_rewards)%10==0:
                 rollout = sum(episode_rewards[-10:])/10
             dict_rew = {reward_tensor: rollout}
             #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
-            dict_loss={agents_tensors[agent_name]:losses[agent_name] for agent_name in names}
+            dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+            dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
-            sum_1, sum_2, sum_3, _ = sess.run([merged, reward_tensor]+[agents_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss})
+            sum_1, sum_2, sum_3,sum_4, sum_5, _ = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
             writer.add_summary(sum_1, train_step)
 
             # save model, display training output

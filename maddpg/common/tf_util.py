@@ -282,6 +282,7 @@ def function(inputs, outputs, updates=None, givens=None):
         f = _Function(inputs, outputs.values(), updates, givens=givens)
         return lambda *args, **kwargs: type(outputs)(zip(outputs.keys(), f(*args, **kwargs)))
     else:
+        lambda *args, **kwargs: f(*args, **kwargs)[0]
         f = _Function(inputs, [outputs], updates, givens=givens)
         return lambda *args, **kwargs: f(*args, **kwargs)[0]
 
@@ -305,6 +306,7 @@ class _Function(object):
             feed_dict[inpt] = value
 
     def __call__(self, *args, **kwargs):
+
         assert len(args) <= len(self.inputs), "Too many arguments provided"
         feed_dict = {}
         # Update the args
@@ -327,7 +329,6 @@ class _Function(object):
         for inpt in self.givens:
             feed_dict[inpt] = feed_dict.get(inpt, self.givens[inpt])
         results = get_session().run(self.outputs_update, feed_dict=feed_dict)[:-1]
-        ic(self.outputs_update)
         if self.check_nan:
             if any(np.isnan(r).any() for r in results):
                 raise RuntimeError("Nan detected")
