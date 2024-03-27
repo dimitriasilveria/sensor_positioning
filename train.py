@@ -259,8 +259,8 @@ def train(arglist):
             dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
             dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
-            sum_1, sum_2, sum_3,sum_4, sum_5, _ = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
-            writer.add_summary(sum_1, train_step)
+            sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+            writer.add_summary(sum_1[0], train_step)
 
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
