@@ -252,6 +252,14 @@ def train(arglist):
                 for a in agent_rewards:
                     a.append(0)
                 agent_info.append([[]])
+                rollout = sum(episode_rewards[:])/len(episode_rewards)
+                dict_rew = {reward_tensor: rollout}
+                #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+                dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+                dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
+
+                sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+                writer.add_summary(sum_1[0], train_step)
 
             if arglist.display:
                 time.sleep(0.1)
@@ -263,7 +271,7 @@ def train(arglist):
             # for benchmarking learned policies
             if arglist.benchmark:
                 for i, info in enumerate(info_n):
-                    agent_info[-1][i].append(info_n['n'])
+                    [-1][i].append(info_n['n'])
                 if train_step > arglist.benchmark_iters and (done or terminal):
                     file_name = str(arglist.benchmark_dir) + str(arglist.exp_name) + '.pkl'
                     print('Finished benchmarking, now saving...')
@@ -293,15 +301,7 @@ def train(arglist):
                     losses_q[agent_name] = 0.0
                 i+=1
 
-            if len(episode_rewards)%10==0:
-                rollout = sum(episode_rewards[-10:])/10
-            dict_rew = {reward_tensor: rollout}
-            #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
-            dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
-            dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
-
-            summaries = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
-            writer.add_summary(summaries[0], train_step)
+           
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
