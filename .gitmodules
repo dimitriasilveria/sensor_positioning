@@ -1,0 +1,3 @@
+[submodule "mpe-surveillance"]
+	path = mpe-surveillance
+	url = git@github.com:calwilmott/mpe-surveillance.git
