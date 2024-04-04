@@ -5,6 +5,8 @@ import pickle
 from icecream import ic
 import matplotlib.pyplot as plt
 import datetime
+import time
+import os
 
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
@@ -33,7 +35,7 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
-    parser.add_argument("--max-episode-len", type=int, default=120, help="maximum episode length")
+    parser.add_argument("--max-episode-len", type=int, default=500, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=10000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
@@ -41,7 +43,7 @@ def parse_args():
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=5024, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
@@ -50,7 +52,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=False)
+    parser.add_argument("--restore", action="store_true", default=True)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
@@ -109,6 +111,11 @@ def train(arglist):
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
+        os.mkdir(arglist.save_dir,exist_ok=True)
+        os.mkdir(arglist.log_dir,exist_ok=True)
+        os.mkdir(arglist.plots_dir,exist_ok=True)
+        os.mkdir(arglist.benchmark_dir,exist_ok=True)
+    
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
         # Initialize
@@ -117,9 +124,9 @@ def train(arglist):
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
-        # if arglist.display or arglist.restore or arglist.benchmark:
-        #     print('Loading previous state...')
-        #     U.load_state(arglist.load_dir)
+        if arglist.display or arglist.restore or arglist.benchmark:
+            print('Loading previous state...')
+            U.load_state(arglist.load_dir)
 
         episode_rewards = [0.0]  # sum of rewards for all agents
 
@@ -158,19 +165,17 @@ def train(arglist):
         rollout = 0
 
         print('Starting iterations...')
+        print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
         while True:
             # get action
             action_n = [agent.action(obs) for agent, obs in zip(trainers,obs_n)]
 
             # environment step
+            #start = time.time()
             new_obs_n, rew_n, done_n, info_n = env.step(action_n)  # type: (object, object, object, object)
             episode_step += 1
-            
-
-
-            if len(episode_rewards)%1000==0:
-                plt.plot(episode_rewards)
-                plt.show(block=False)
+            # end = time.time()
+            # ic("step time: %lf" % (end - start))
 
             done = all(done_n)
             terminal = (episode_step >= arglist.max_episode_len)
@@ -213,6 +218,14 @@ def train(arglist):
                 for a in agent_rewards:
                     a.append(0)
                 agent_info.append([[]])
+                rollout = sum(episode_rewards[:])/len(episode_rewards)
+                dict_rew = {reward_tensor: rollout}
+                #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+                dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+                dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
+
+                sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+                writer.add_summary(sum_1[0], train_step)
 
 
             # increment global step counter
@@ -241,6 +254,7 @@ def train(arglist):
             for agent in trainers:
                 agent.preupdate()
             i=0
+            # start = time.time()
             for agent in trainers:
                 loss = agent.update(trainers, train_step)
                 agent_name = 'agent'+str(i)
@@ -251,17 +265,21 @@ def train(arglist):
                     losses_p[agent_name] = 0.0
                     losses_q[agent_name] = 0.0
                 i+=1
+            # end = time.time()
+            # ic("update time: %lf" % (end - start))
 
-            if len(episode_rewards)%10==0:
-                rollout = sum(episode_rewards[-10:])/10
-            dict_rew = {reward_tensor: rollout}
-            #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
-            dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
-            dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
+            # start = time.time()
+            # if len(episode_rewards)%10==0:
+            #     rollout = sum(episode_rewards[-10:])/10
+            #     dict_rew = {reward_tensor: rollout}
+            #     #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+            #     dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+            #     dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
-            sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
-            writer.add_summary(sum_1[0], train_step)
-
+            #     sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+            #     writer.add_summary(sum_1[0], train_step)
+            # end = time.time()
+            # ic("summary time: %lf" % (end - start))
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
