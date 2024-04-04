@@ -287,7 +287,15 @@ def train(arglist):
                     losses_p[agent_name] = 0.0
                     losses_q[agent_name] = 0.0
                 i+=1
+            if terminal:
+                rollout = sum(episode_rewards[:])/len(episode_rewards)
+                dict_rew = {reward_tensor: rollout}
+                #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+                dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+                dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
+                sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+                writer.add_summary(sum_1[0], train_step)
            
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
