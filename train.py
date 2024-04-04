@@ -35,7 +35,7 @@ def parse_args():
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
-    parser.add_argument("--max-episode-len", type=int, default=300, help="maximum episode length")
+    parser.add_argument("--max-episode-len", type=int, default=500, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
-    parser.add_argument("--save-dir", type=str, default="./tmp/policy/", help="directory in which training state and model should be saved")
+    parser.add_argument("--save-dir", type=str, default="./tmp", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
@@ -144,10 +144,10 @@ def train(arglist):
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
-        os.mkdir(arglist.save_dir,exist_ok=True)
-        os.mkdir(arglist.log_dir,exist_ok=True)
-        os.mkdir(arglist.plots_dir,exist_ok=True)
-        os.mkdir(arglist.benchmark_dir,exist_ok=True)
+        # Initialize
+        os.makedirs(arglist.log_dir,exist_ok=True)
+        os.makedirs(arglist.plots_dir,exist_ok=True)
+        os.makedirs(arglist.benchmark_dir,exist_ok=True)
         
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
@@ -167,15 +167,16 @@ def train(arglist):
         final_ep_rewards = []  # sum of rewards for training curve
         final_ep_ag_rewards = []  # agent rewards for training curve
         agent_info = [[[]]]  # placeholder for benchmarking info
-        saver = tensorflow.compat.v1.train.Saver()
+        saver = tensorflow.compat.v1.train.Saver(filename=arglist.exp_name)
         obs_n = env.reset()
         
         episode_step = 0
         train_step = 0
         t_start = time.time()
         #tensorboard_callback = tensorf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
+        save_dir = arglist.save_dir + "/" + arglist.exp_name + "_" + current_time + "/" 
         sess = tensorflow.compat.v1.Session()
         writer = tensorflow.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
         reward_tensor = tensorflow.placeholder(tensorflow.float32, shape=(), name='reward')
@@ -226,22 +227,8 @@ def train(arglist):
                 episode_rewards[-1] += rew
                 agent_rewards[i][-1] += rew
             
-            #reward_t = tensorf.convert_to_tensor(episode_rewards[-1], dtype=tensorf.float32, dtype_hint=None, name=None) 
 
-            #accuracy_scalar = tensorf.summary.scalar("episode_reward",episode_rewards[-1])
-            #writer.add_scalar(accuracy_scalar,episode_step).eval()
             over = False
-            # for i in range(0, 3):
-            #     if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
-            #         over = True
-
-            # if over:
-
-            #     obs_n = env.reset()
-            #     episode_step = 0
-            #     episode_rewards = episode_rewards[0:-1]
-            #     episode_rewards.append(0)
-
 
 
             if done or terminal:
@@ -305,7 +292,7 @@ def train(arglist):
             # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
-                U.save_state(arglist.save_dir, saver=saver)
+                U.save_state(save_dir, saver=saver)
                 # print statement depends on whether or not there are adversaries
                 ##
                 print("steps: {}, episodes: {}, mean episode reward: {},  time: {}".format(

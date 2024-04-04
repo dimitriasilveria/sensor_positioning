@@ -79,15 +79,15 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
 
         # set up placeholders
         obs_ph_n = make_obs_ph_n
-        act_ph_n = [act_pdtype_n[i].sample_placeholder([1], name="action"+str(i)) for i in range(len(act_space_n))]
-        target_ph = tf.compat.v1.placeholder(tf.float32, [1], name="target")
+        act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
+        target_ph = tf.compat.v1.placeholder(tf.float32, [None], name="target")
 
         #q_input = tf.concat(obs_ph_n + act_ph_n, 1)
         if local_q_func:
-            ic()
             q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
         #for obs in  obs_ph_n
         q = q_func(obs_ph_n[0], act_ph_n, 1, scope="q_func", num_units=num_units)[:,0]
+
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
 
         q_loss = tf.reduce_mean(tf.square(q - target_ph))
@@ -95,12 +95,10 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
         # viscosity solution to Bellman differential equation in place of an initial condition
         q_reg = tf.reduce_mean(tf.square(q))
         loss = q_loss #+ 1e-3 * q_reg
-
         optimize_expr = U.minimize_and_clip(optimizer, loss, q_func_vars, grad_norm_clipping)
         # Create callable functions
         train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph], outputs=loss, updates=[optimize_expr])
         q_values = U.function(obs_ph_n + act_ph_n, q)
-
         # target network
         target_q = q_func(obs_ph_n[0], act_ph_n, 1, scope="target_q_func", num_units=num_units)[:,0]
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
@@ -116,8 +114,8 @@ class MADDPGAgentTrainer(AgentTrainer):
         self.agent_index = agent_index
         self.args = args
         obs_ph_n = []
-        #for i in range(self.n):
-        obs_ph_n.append(U.BatchInput(obs_shape_n[0], name="observation"+str(0)).get())
+        for i in range(self.n):
+            obs_ph_n.append(U.BatchInput(obs_shape_n[i], name="observation"+str(0)).get())
         # Create all the functions necessary to train the model
         self.q_train, self.q_update, self.q_debug = q_train(
             scope=self.name,
@@ -181,7 +179,6 @@ class MADDPGAgentTrainer(AgentTrainer):
         target_q = 0.0
         for i in range(num_sample):
             target_act_next_n = [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
-            #ic(target_act_next_n)
             target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
             target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         target_q /= num_sample
