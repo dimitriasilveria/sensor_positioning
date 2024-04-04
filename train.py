@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
-    parser.add_argument("--restore", action="store_true", default=True)
+    parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
     parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
@@ -79,7 +79,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="dense")
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="dense",seed=81)
     env.reset()
     return env
 
@@ -111,10 +111,10 @@ def train(arglist):
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
-        os.mkdir(arglist.save_dir,exist_ok=True)
-        os.mkdir(arglist.log_dir,exist_ok=True)
-        os.mkdir(arglist.plots_dir,exist_ok=True)
-        os.mkdir(arglist.benchmark_dir,exist_ok=True)
+
+        os.makedirs(arglist.log_dir,exist_ok=True)
+        os.makedirs(arglist.plots_dir,exist_ok=True)
+        os.makedirs(arglist.benchmark_dir,exist_ok=True)
     
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
@@ -142,6 +142,7 @@ def train(arglist):
         t_start = time.time()
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
+        save_dir = arglist.save_dir + "/" + arglist.exp_name + "_" + current_time + "/" 
         sess = tf.compat.v1.Session()
         writer = tf.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
         reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
@@ -183,19 +184,12 @@ def train(arglist):
             for i, agent in enumerate(trainers):
                 agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
             obs_n = new_obs_n
-            
-       
-   
+
             for i, rew in enumerate(rew_n):
 
                 episode_rewards[-1] += rew
                 agent_rewards[i][-1] += rew
             
-            reward_t = tf.convert_to_tensor(episode_rewards[-1], dtype=tf.float32, dtype_hint=None, name=None) 
-
-
-
-
             over = False
             for i in range(0, 3):
                 if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
@@ -265,25 +259,10 @@ def train(arglist):
                     losses_p[agent_name] = 0.0
                     losses_q[agent_name] = 0.0
                 i+=1
-            # end = time.time()
-            # ic("update time: %lf" % (end - start))
 
-            # start = time.time()
-            # if len(episode_rewards)%10==0:
-            #     rollout = sum(episode_rewards[-10:])/10
-            #     dict_rew = {reward_tensor: rollout}
-            #     #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
-            #     dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
-            #     dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
-
-            #     sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
-            #     writer.add_summary(sum_1[0], train_step)
-            # end = time.time()
-            # ic("summary time: %lf" % (end - start))
-            # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
-                U.save_state(arglist.save_dir, saver=saver)
+                U.save_state(save_dir, saver=saver)
                 # print statement depends on whether or not there are adversaries
                 ##
                 print("steps: {}, episodes: {}, mean episode reward: {},  time: {}".format(
