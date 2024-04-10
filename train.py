@@ -25,7 +25,7 @@ def import_tensorflow():
     tensorflow.get_logger().setLevel(logging.ERROR)
     return tensorflow
 
-tensorflow = import_tensorflow()
+tf = import_tensorflow()
 
 
 import tensorflow.compat.v1.layers as layers
@@ -115,7 +115,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="image")
+    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="image",yseed=81)
     env.reset()
     return env
 
@@ -140,15 +140,21 @@ def get_trainers(env, num_adversaries, obs_shape_n, arglist):
 def train(arglist):
     
     with U.single_threaded_session():
+        print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+        input()
         # Create environment
         env = make_env(arglist.scenario, arglist, arglist.benchmark)
         env.reset()
         #env.render()
         # Create agent trainers
-        #ic(env.observation_space)
-        obs_shape_n = [env.observation_space[0].shape]
+        obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
+
+        os.makedirs(arglist.log_dir,exist_ok=True)
+        os.makedirs(arglist.plots_dir,exist_ok=True)
+        os.makedirs(arglist.benchmark_dir,exist_ok=True)
+    
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
         # Initialize
@@ -157,7 +163,7 @@ def train(arglist):
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
-        if arglist.display or arglist.restore or arglist.benchmark:
+        if arglist.restore or arglist.benchmark:
             print('Loading previous state...')
             U.load_state(arglist.load_dir)
 
@@ -167,36 +173,47 @@ def train(arglist):
         final_ep_rewards = []  # sum of rewards for training curve
         final_ep_ag_rewards = []  # agent rewards for training curve
         agent_info = [[[]]]  # placeholder for benchmarking info
-        saver = tensorflow.compat.v1.train.Saver()
+        saver = tf.compat.v1.train.Saver()
         obs_n = env.reset()
         
         episode_step = 0
         train_step = 0
         t_start = time.time()
-        #tensorboard_callback = tensorf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
-        sess = tensorflow.compat.v1.Session()
-        writer = tensorflow.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
-        reward_tensor = tensorflow.placeholder(tensorflow.float32, shape=(), name='reward')
-        tensorflow.compat.v1.summary.scalar('reward', reward_tensor)
-        merged = tensorflow.compat.v1.summary.merge_all()
-        tensorflow.global_variables_initializer().run()
+        save_dir = arglist.save_dir + "/" + arglist.exp_name + "_" + current_time + "/" 
+        sess = tf.compat.v1.Session()
+        writer = tf.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
+        reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
+        tf.compat.v1.summary.scalar('reward', reward_tensor)
+        agents_p_tensors = {}
+        agents_q_tensors = {}
+        losses_p = {}
+        losses_q = {}
+        names = []
+        for i in range(env.n):
+            agent_name = 'agent'+str(i)
+            names.append(agent_name)
+            agents_p_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_p_agent'+str(i), agents_p_tensors[agent_name])
+            agents_q_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_q_agent'+str(i), agents_q_tensors[agent_name])
+        merged = tf.compat.v1.summary.merge_all()
+        tf.global_variables_initializer().run()
         rollout = 0
+
         print('Starting iterations...')
+
         while True:
             # get action
             action_n = [agent.action(obs) for agent, obs in zip(trainers,obs_n)]
 
             # environment step
+            #start = time.time()
             new_obs_n, rew_n, done_n, info_n = env.step(action_n)  # type: (object, object, object, object)
             episode_step += 1
-            
-
-
-            if len(episode_rewards)%1000==0:
-                plt.plot(episode_rewards)
-                plt.show(block=False)
+            # end = time.time()
+            # ic("step time: %lf" % (end - start))
 
             done = all(done_n)
             terminal = (episode_step >= arglist.max_episode_len)
@@ -204,38 +221,29 @@ def train(arglist):
             for i, agent in enumerate(trainers):
                 agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
             obs_n = new_obs_n
-            
-       
-   
+
             for i, rew in enumerate(rew_n):
 
                 episode_rewards[-1] += rew
                 agent_rewards[i][-1] += rew
             
-            #reward_t = tensorf.convert_to_tensor(episode_rewards[-1], dtype=tensorf.float32, dtype_hint=None, name=None) 
-
-            if len(episode_rewards)%10==0:
-                rollout = sum(episode_rewards[-10:])/10
-            summary, _ = sess.run([merged, reward_tensor], feed_dict={reward_tensor: rollout})
-            writer.add_summary(summary, train_step)
-            #accuracy_scalar = tensorf.summary.scalar("episode_reward",episode_rewards[-1])
-            #writer.add_scalar(accuracy_scalar,episode_step).eval()
             over = False
             # for i in range(0, 3):
             #     if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
             #         over = True
 
-            # if over:
+            if over:
 
-            #     obs_n = env.reset()
-            #     episode_step = 0
-            #     episode_rewards = episode_rewards[0:-1]
-            #     episode_rewards.append(0)
+                obs_n = env.reset()
+                episode_step = 0
+                episode_rewards = episode_rewards[0:-1]
+                episode_rewards.append(0)
 
 
 
             if done or terminal:
-                print("episode_rewards: %lf train_step: %d episode number: %d"% (episode_rewards[-1], train_step,len(episode_rewards)))
+                mean_reward = np.mean(episode_rewards[-episode_step:])
+                print("episode_rewards: %lf train_step: %d" % (np.mean(episode_rewards[-episode_step:]), train_step))
                 obs_n = env.reset()
                 episode_step = 0
                 episode_rewards.append(0)
@@ -243,13 +251,13 @@ def train(arglist):
                     a.append(0)
                 agent_info.append([[]])
 
+            # increment global step counter
+            train_step += 1
+            # for displaying learned policies
             if arglist.display:
                 time.sleep(0.1)
                 env.render()
-                continue
-            # increment global step counter
-            train_step += 1
-            #ic(train_step)
+
             # for benchmarking learned policies
             if arglist.benchmark:
                 for i, info in enumerate(info_n):
@@ -261,23 +269,40 @@ def train(arglist):
                         pickle.dump(agent_info[:-1], fp)
                     break
                 continue
+
             # for displaying learned policies
-            if arglist.display:
-                time.sleep(0.1)
-                env.render()
-                continue
+            # if arglist.display:
+            #     time.sleep(0.1)
+            #     env.render()
+            #     continue
 
             # update all trainers, if not in display or benchmark mode
             loss = None
             for agent in trainers:
                 agent.preupdate()
+            i=0
+            # start = time.time()
             for agent in trainers:
                 loss = agent.update(trainers, train_step)
+                agent_name = 'agent'+str(i)
+                if loss is not None:
+                    losses_p[agent_name] = loss[1]
+                    losses_q[agent_name] = loss[0]
+                else:
+                    losses_p[agent_name] = 0.0
+                    losses_q[agent_name] = 0.0
+                i+=1
+            if terminal:
+                dict_rew = {reward_tensor: mean_reward}
+                #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
+                dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
+                dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
-            # save model, display training output
+                sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
+                writer.add_summary(sum_1[0], train_step)
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
-                U.save_state(arglist.save_dir, saver=saver)
+                U.save_state(save_dir, saver=saver)
                 # print statement depends on whether or not there are adversaries
                 ##
                 print("steps: {}, episodes: {}, mean episode reward: {},  time: {}".format(
@@ -292,10 +317,9 @@ def train(arglist):
             final_ep_rewards.append(np.mean(episode_rewards[-arglist.save_rate:]))
             for rew in agent_rewards:
                 final_ep_ag_rewards.append(np.mean(rew[-arglist.save_rate:]))
-            
+
             # saves final episode reward for plotting training curve later
             if len(episode_rewards) > arglist.num_episodes:
-                
                 rew_file_name = str(arglist.plots_dir) + str(arglist.exp_name) + '_rewards.pkl'
                 with open(rew_file_name, 'wb') as fp:
                     pickle.dump(final_ep_rewards, fp)
