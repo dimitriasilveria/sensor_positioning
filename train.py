@@ -64,9 +64,9 @@ def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=Non
     # This model takes as input an observation and returns values of all actions
     with tf.variable_scope(scope, reuse=reuse):
         input_shape = (1, 10, 10, 7)
-        conv1 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=2, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
+        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
         # Second Conv3D layer
-        conv2 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
+        conv2 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=2,,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
         flat = tf.layers.Flatten()(conv2)
 
