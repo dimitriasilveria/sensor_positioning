@@ -48,7 +48,7 @@ def parse_args():
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="./tmp", help="directory in which training state and model should be saved")
-    parser.add_argument("--save-rate", type=int, default=1, help="save model once every time this many episodes are completed")
+    parser.add_argument("--save-rate", type=int, default=10, help="save model once every time this many episodes are completed")
     parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
@@ -62,41 +62,40 @@ def parse_args():
 
 def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
-    with tensorflow.variable_scope(scope, reuse=reuse):
+    with tf.variable_scope(scope, reuse=reuse):
         input_shape = (1, 10, 10, 7)
-        conv1 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input)
+        conv1 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=2, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
         # Second Conv3D layer
-        conv2 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
+        conv2 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
-        flat = tensorflow.layers.Flatten()(conv2)
+        flat = tf.layers.Flatten()(conv2)
 
         # First dense layer
-        dense1 = tensorflow.layers.Dense(units=num_units, activation=tensorflow.nn.relu)(flat)
+        dense1 = tf.layers.Dense(units=num_units, activation=tf.nn.relu)(flat)
 
         # Second dense layer (output layer)
-        outputs = tensorflow.layers.Dense(units=num_outputs, activation=None)(dense1)
+        outputs = tf.layers.Dense(units=num_outputs, activation=None)(dense1)
         # out = input
 
         return outputs
 
 def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
-    with tensorflow.compat.v1.variable_scope(scope, reuse=reuse):
+    with tf.compat.v1.variable_scope(scope, reuse=reuse):
         #input_shape = (1, 10, 10, 7)
-        conv1 = tensorflow.compat.v1.layers.Conv2D(filters=3, kernel_size=8,data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(input_obs)
+        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input_obs)
         # Second Conv3D layer
-        conv2 = tensorflow.compat.v1.layers.Conv2D(filters=2, kernel_size=4,data_format = "channels_last", padding='valid', activation=tensorflow.nn.relu)(conv1)
+        conv2 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=4,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
-        flat = tensorflow.layers.Flatten()(conv2)
-        ic(flat.shape)
+        flat = tf.layers.Flatten()(conv2)
         # Concatenate the flattened layer with another input
         for input in input_act:
-            concatenated_inputs = tensorflow.concat([flat,input],axis=1)
+            concatenated_inputs = tf.concat([flat,input],axis=1)
         # First dense layer
-        dense1 = tensorflow.layers.Dense(units=num_units, activation=tensorflow.nn.relu)(concatenated_inputs)
+        dense1 = tf.layers.Dense(units=num_units, activation=tf.nn.relu)(concatenated_inputs)
 
         # Second dense layer (output layer)
-        outputs = tensorflow.layers.Dense(units=num_outputs, activation=None)(dense1)
+        outputs = tf.layers.Dense(units=num_outputs, activation=None)(dense1)
 
         return outputs
 
@@ -110,7 +109,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=2, num_obstacles=4, vision_dist=0.2, grid_resolution=32, grid_max_reward=1, reward_delta=0.001, observation_mode="image")
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="image")
     env.reset()
     return env
 
@@ -133,24 +132,23 @@ def get_trainers(env, num_adversaries, obs_shape_n, arglist):
 
 
 def train(arglist):
-
+    
     with U.single_threaded_session():
         print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-        input()
+
         # Create environment
         env = make_env(arglist.scenario, arglist, arglist.benchmark)
         env.reset()
         #env.render()
         # Create agent trainers
-        #ic(env.observation_space)
         obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
-        # Initialize
+
         os.makedirs(arglist.log_dir,exist_ok=True)
         os.makedirs(arglist.plots_dir,exist_ok=True)
         os.makedirs(arglist.benchmark_dir,exist_ok=True)
-        
+    
         print('Using good policy {} and adv policy {}'.format(arglist.good_policy, arglist.adv_policy))
 
         # Initialize
@@ -169,36 +167,33 @@ def train(arglist):
         final_ep_rewards = []  # sum of rewards for training curve
         final_ep_ag_rewards = []  # agent rewards for training curve
         agent_info = [[[]]]  # placeholder for benchmarking info
-        saver = tensorflow.compat.v1.train.Saver(filename=arglist.exp_name)
+        saver = tf.compat.v1.train.Saver()
         obs_n = env.reset()
         
         episode_step = 0
         train_step = 0
         t_start = time.time()
-        #tensorboard_callback = tensorf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = arglist.log_dir + "/" + arglist.exp_name + "_" + current_time
         save_dir = arglist.save_dir + "/" + arglist.exp_name + "_" + current_time + "/" 
-        sess = tensorflow.compat.v1.Session()
-        writer = tensorflow.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
-        reward_tensor = tensorflow.placeholder(tensorflow.float32, shape=(), name='reward')
-        tensorflow.compat.v1.summary.scalar('reward', reward_tensor)
+        sess = tf.compat.v1.Session()
+        writer = tf.compat.v1.summary.FileWriter(train_log_dir,sess.graph)
+        reward_tensor = tf.placeholder(tf.float32, shape=(), name='reward')
+        tf.compat.v1.summary.scalar('reward', reward_tensor)
         agents_p_tensors = {}
         agents_q_tensors = {}
         losses_p = {}
         losses_q = {}
         names = []
-        
-        
         for i in range(env.n):
             agent_name = 'agent'+str(i)
             names.append(agent_name)
-            agents_p_tensors[agent_name] = tensorflow.placeholder(tensorflow.float32, shape=(), name='loss_p_agent'+str(i))
-            tensorflow.compat.v1.summary.scalar('loss_p_agent'+str(i), agents_p_tensors[agent_name])
-            agents_q_tensors[agent_name] = tensorflow.placeholder(tensorflow.float32, shape=(), name='loss_p_agent'+str(i))
-            tensorflow.compat.v1.summary.scalar('loss_q_agent'+str(i), agents_q_tensors[agent_name])
-        merged = tensorflow.compat.v1.summary.merge_all()
-        tensorflow.global_variables_initializer().run()
+            agents_p_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_p_agent'+str(i), agents_p_tensors[agent_name])
+            agents_q_tensors[agent_name] = tf.placeholder(tf.float32, shape=(), name='loss_p_agent'+str(i))
+            tf.compat.v1.summary.scalar('loss_q_agent'+str(i), agents_q_tensors[agent_name])
+        merged = tf.compat.v1.summary.merge_all()
+        tf.global_variables_initializer().run()
         rollout = 0
 
         print('Starting iterations...')
@@ -222,12 +217,21 @@ def train(arglist):
             obs_n = new_obs_n
 
             for i, rew in enumerate(rew_n):
-
                 episode_rewards[-1] += rew
                 agent_rewards[i][-1] += rew
             
-
             over = False
+            # for i in range(0, 3):
+            #     if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
+            #         over = True
+
+            if over:
+
+                obs_n = env.reset()
+                episode_step = 0
+                episode_rewards = episode_rewards[0:-1]
+                episode_rewards.append(0)
+
 
 
             if done or terminal:
@@ -239,15 +243,10 @@ def train(arglist):
                 for a in agent_rewards:
                     a.append(0)
                 agent_info.append([[]])
-                rollout = sum(episode_rewards[:])/len(episode_rewards)
-                dict_rew = {reward_tensor: rollout}
-                #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
-                dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
-                dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
-                sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
-                writer.add_summary(sum_1[0], train_step)
-
+            # increment global step counter
+            train_step += 1
+            # for displaying learned policies
             if arglist.display:
                 time.sleep(0.1)
                 env.render()
@@ -255,7 +254,7 @@ def train(arglist):
             # for benchmarking learned policies
             if arglist.benchmark:
                 for i, info in enumerate(info_n):
-                    [-1][i].append(info_n['n'])
+                    agent_info[-1][i].append(info_n['n'])
                 if train_step > arglist.benchmark_iters and (done or terminal):
                     file_name = str(arglist.benchmark_dir) + str(arglist.exp_name) + '.pkl'
                     print('Finished benchmarking, now saving...')
@@ -275,6 +274,7 @@ def train(arglist):
             for agent in trainers:
                 agent.preupdate()
             i=0
+            # start = time.time()
             for agent in trainers:
                 loss = agent.update(trainers, train_step)
                 agent_name = 'agent'+str(i)
@@ -286,16 +286,13 @@ def train(arglist):
                     losses_q[agent_name] = 0.0
                 i+=1
             if terminal:
-                rollout = sum(episode_rewards[:])/len(episode_rewards)
-                dict_rew = {reward_tensor: rollout}
+                dict_rew = {reward_tensor: mean_reward}
                 #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
                 dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
                 dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
 
                 sum_1 = sess.run([merged, reward_tensor]+[agents_p_tensors[agent_name] for agent_name in names]+[agents_q_tensors[agent_name] for agent_name in names], feed_dict={**dict_rew, **dict_loss_p,**dict_loss_q})
                 writer.add_summary(sum_1[0], train_step)
-           
-            # save model, display training output
             if terminal and (len(episode_rewards) % arglist.save_rate == 0):
                 
                 U.save_state(save_dir, saver=saver)
