@@ -6,6 +6,7 @@ from icecream import ic
 import matplotlib.pyplot as plt
 import datetime
 import time
+from tensorflow.keras.utils import plot_model
 import os
 
 import maddpg.common.tf_util as U
@@ -36,26 +37,26 @@ def parse_args():
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
     parser.add_argument("--max-episode-len", type=int, default=500, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=10000000, help="number of episodes")
+    parser.add_argument("--num-episodes", type=int, default=100000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=5024, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=1024, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
-    parser.add_argument("--exp-name", type=str, default="test", help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default="map", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="./tmp/policy/", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
+    parser.add_argument("--load-dir", type=str, default='/home/rlproject/Desktop/debug/sensor_positioning/tmp/policy/map_20240408-182412/', help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
-    parser.add_argument("--benchmark-iters", type=int, default=100000, help="number of iterations run for benchmarking")
+    parser.add_argument("--benchmark-iters", type=int, default=500, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="./benchmark_files/", help="directory where benchmark data is saved")
     parser.add_argument("--plots-dir", type=str, default="./learning_curves/", help="directory where plot data is saved")
     return parser.parse_args()
@@ -79,7 +80,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.001, observation_mode="dense",seed=81)
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.005, observation_mode="dense",seed=81)
     env.reset()
     return env
 
@@ -103,6 +104,8 @@ def get_trainers(env, num_adversaries, obs_shape_n, arglist):
 def train(arglist):
     
     with U.single_threaded_session():
+        print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+        input()
         # Create environment
         env = make_env(arglist.scenario, arglist, arglist.benchmark)
         env.reset()
@@ -124,7 +127,7 @@ def train(arglist):
         # Load previous results, if necessary
         if arglist.load_dir == "":
             arglist.load_dir = arglist.save_dir
-        if arglist.display or arglist.restore or arglist.benchmark:
+        if arglist.restore or arglist.benchmark:
             print('Loading previous state...')
             U.load_state(arglist.load_dir)
 
@@ -152,8 +155,6 @@ def train(arglist):
         losses_p = {}
         losses_q = {}
         names = []
-        
-        
         for i in range(env.n):
             agent_name = 'agent'+str(i)
             names.append(agent_name)
@@ -166,7 +167,7 @@ def train(arglist):
         rollout = 0
 
         print('Starting iterations...')
-        print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
         while True:
             # get action
             action_n = [agent.action(obs) for agent, obs in zip(trainers,obs_n)]
@@ -191,9 +192,9 @@ def train(arglist):
                 agent_rewards[i][-1] += rew
             
             over = False
-            for i in range(0, 3):
-                if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
-                    over = True
+            # for i in range(0, 3):
+            #     if obs_n[0][2] < -30 or obs_n[0][3] < -30 or obs_n[0][3] > 30 or obs_n[0][2] > 30:
+            #         over = True
 
             if over:
 
@@ -205,7 +206,8 @@ def train(arglist):
 
 
             if done or terminal:
-                print("episode_rewards: %lf train_step: %d" % (episode_rewards[-1] / 3, train_step))
+                mean_reward = np.mean(episode_rewards[-episode_step:])
+                print("episode_rewards: %lf train_step: %d" % (np.mean(episode_rewards[-episode_step:]), train_step))
                 obs_n = env.reset()
                 episode_step = 0
                 episode_rewards.append(0)
@@ -215,6 +217,10 @@ def train(arglist):
 
             # increment global step counter
             train_step += 1
+            # for displaying learned policies
+            if arglist.display:
+                time.sleep(0.1)
+                env.render()
 
             # for benchmarking learned policies
             if arglist.benchmark:
@@ -229,10 +235,10 @@ def train(arglist):
                 continue
 
             # for displaying learned policies
-            if arglist.display:
-                time.sleep(0.1)
-                env.render()
-                continue
+            # if arglist.display:
+            #     time.sleep(0.1)
+            #     env.render()
+            #     continue
 
             # update all trainers, if not in display or benchmark mode
             loss = None
@@ -251,8 +257,7 @@ def train(arglist):
                     losses_q[agent_name] = 0.0
                 i+=1
             if terminal:
-                rollout = sum(episode_rewards[:])/len(episode_rewards)
-                dict_rew = {reward_tensor: rollout}
+                dict_rew = {reward_tensor: mean_reward}
                 #summary, _ = sess.run([merged_losses]+[agents_tensors[agent_name] for agent_name in names], feed_dict={agents_tensors[agent_name]:losses[agent_name] for agent_name in names})
                 dict_loss_p={agents_p_tensors[agent_name]:losses_p[agent_name] for agent_name in names}
                 dict_loss_q={agents_q_tensors[agent_name]:losses_q[agent_name] for agent_name in names}
