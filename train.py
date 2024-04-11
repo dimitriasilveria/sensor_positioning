@@ -80,7 +80,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.005, observation_mode="dense",seed=81)
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="dense",seed=81,reward_type='pov')
     env.reset()
     return env
 
@@ -105,7 +105,6 @@ def train(arglist):
     
     with U.single_threaded_session():
         print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-        input()
         # Create environment
         env = make_env(arglist.scenario, arglist, arglist.benchmark)
         env.reset()
