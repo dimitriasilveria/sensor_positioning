@@ -6,6 +6,7 @@ from icecream import ic
 import matplotlib.pyplot as plt
 import datetime
 import os
+import gc
 
 import maddpg.common.tf_util as U
 from maddpg.trainer.maddpg import MADDPGAgentTrainer
@@ -242,6 +243,7 @@ def train(arglist):
                 for a in agent_rewards:
                     a.append(0)
                 agent_info.append([[]])
+                gc.collect()
 
             # increment global step counter
             train_step += 1
