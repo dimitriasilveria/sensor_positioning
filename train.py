@@ -49,12 +49,12 @@ def parse_args():
     parser.add_argument("--exp-name", type=str, default="pov_image", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="./tmp", help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=10, help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="", help="directory in which training state and model are loaded")
+    parser.add_argument("--load-dir", type=str, default="./tests/pov_image_20240412-083509/", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
-    parser.add_argument("--benchmark", action="store_true", default=False)
+    parser.add_argument("--benchmark", action="store_true", default=True)
     parser.add_argument("--benchmark-iters", type=int, default=1000, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="./benchmark_files/", help="directory where benchmark data is saved")
     parser.add_argument("--plots-dir", type=str, default="./learning_curves/", help="directory where plot data is saved")
@@ -63,10 +63,9 @@ def parse_args():
 def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
     with tf.variable_scope(scope, reuse=reuse):
-        input_shape = (1, 10, 10, 7)
-        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8, input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
+        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
         # Second Conv3D layer
-        conv2 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=2,input_shape=input_shape[1:],data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
+        conv2 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=2,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
         # Flatten the output of the second convolutional layer
         flat = tf.layers.Flatten()(conv2)
 
@@ -109,7 +108,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="image",reward_type='pov')
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="image",reward_type='pov',seed=81)
     env.reset()
     return env
 
