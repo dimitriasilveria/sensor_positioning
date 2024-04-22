@@ -37,67 +37,78 @@ def parse_args():
     # Environment
     parser.add_argument("--scenario", type=str, default="survey_region_maddpg", help="coverage")
     parser.add_argument("--max-episode-len", type=int, default=500, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
+    parser.add_argument("--num-episodes", type=int, default=10000000, help="number of episodes")
     parser.add_argument("--num-adversaries", type=int, default=0, help="number of adversaries")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
     parser.add_argument("--lr", type=float, default=0.012, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=64, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
     # Checkpointing
-    parser.add_argument("--exp-name", type=str, default="pov_image", help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default="pov_image_new_nn_gamma_0_99", help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="./tmp", help="directory in which training state and model should be saved")
-    parser.add_argument("--save-rate", type=int, default=10, help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="./tests/pov_image_20240412-083509/", help="directory in which training state and model are loaded")
+    parser.add_argument("--save-rate", type=int, default=1000, help="save model once every time this many episodes are completed")
+    parser.add_argument("--load-dir", type=str, default="./tmp/pov_image_new_nn_lr_0_12_20240422-100047/", help="directory in which training state and model are loaded")
     parser.add_argument("--log-dir", type=str, default="./my_logs", help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--restore", action="store_true", default=False)
     parser.add_argument("--display", action="store_true", default=False)
     parser.add_argument("--benchmark", action="store_true", default=False)
-    parser.add_argument("--benchmark-iters", type=int, default=1000, help="number of iterations run for benchmarking")
+    parser.add_argument("--benchmark-iters", type=int, default=1500, help="number of iterations run for benchmarking")
     parser.add_argument("--benchmark-dir", type=str, default="./benchmark_files/", help="directory where benchmark data is saved")
     parser.add_argument("--plots-dir", type=str, default="./learning_curves/", help="directory where plot data is saved")
     return parser.parse_args()
 
 def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
-    # This model takes as input an observation and returns values of all actions
+
     with tf.variable_scope(scope, reuse=reuse):
-        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input)
-        # Second Conv3D layer
-        conv2 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=2,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
+        # First convolutional layer with 16 kernels of size 5x5
+        conv1 = layers.conv2d(inputs=input, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
+        # Second convolutional layer with 16 kernels of size 5x5
+        conv2 = layers.conv2d(inputs=conv1, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
+        
         # Flatten the output of the second convolutional layer
-        flat = tf.layers.Flatten()(conv2)
+        flattened = layers.flatten(conv2)
+        
+        # First hidden layer with 256 units
+        hidden1 = layers.dense(flattened, units=256, activation=tf.nn.relu)
+        # Second hidden layer with 256 units
+        hidden2 = layers.dense(hidden1, units=256, activation=tf.nn.relu)
+        # Third hidden layer with 256 units
+        hidden3 = layers.dense(hidden2, units=256, activation=tf.nn.relu)
+        
+        # Output layer
+        output = tf.layers.dense(hidden3, units=num_outputs)
+        
+        return output
 
-        # First dense layer
-        dense1 = tf.layers.Dense(units=num_units, activation=tf.nn.relu)(flat)
-
-        # Second dense layer (output layer)
-        outputs = tf.layers.Dense(units=num_outputs, activation=None)(dense1)
-        # out = input
-
-        return outputs
 
 def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
     with tf.compat.v1.variable_scope(scope, reuse=reuse):
-        #input_shape = (1, 10, 10, 7)
-        conv1 = tf.compat.v1.layers.Conv2D(filters=3, kernel_size=8,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(input_obs)
-        # Second Conv3D layer
-        conv2 = tf.compat.v1.layers.Conv2D(filters=2, kernel_size=4,data_format = "channels_last", padding='valid', activation=tf.nn.relu)(conv1)
+        # First convolutional layer with 16 kernels of size 5x5
+        conv1 = layers.conv2d(inputs=input_obs, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
+        # Second convolutional layer with 16 kernels of size 5x5
+        conv2 = layers.conv2d(inputs=conv1, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
+        
         # Flatten the output of the second convolutional layer
-        flat = tf.layers.Flatten()(conv2)
+        flattened = layers.flatten(conv2)
         # Concatenate the flattened layer with another input
         for input in input_act:
-            concatenated_inputs = tf.concat([flat,input],axis=1)
+            concatenated_inputs = tf.concat([flattened,input],axis=1)
         # First dense layer
-        dense1 = tf.layers.Dense(units=num_units, activation=tf.nn.relu)(concatenated_inputs)
-
-        # Second dense layer (output layer)
-        outputs = tf.layers.Dense(units=num_outputs, activation=None)(dense1)
-
-        return outputs
+        hidden1 = layers.dense(concatenated_inputs, units=256, activation=tf.nn.relu)
+        # Second hidden layer with 256 units
+        hidden2 = layers.dense(hidden1, units=256, activation=tf.nn.relu)
+        # Third hidden layer with 256 units
+        hidden3 = layers.dense(hidden2, units=256, activation=tf.nn.relu)
+        
+        # Output layer
+        output = tf.layers.dense(hidden3, units=num_outputs)
+        
+        return output
 
 def make_env(scenario_name, arglist, benchmark=False):
     
@@ -235,7 +246,7 @@ def train(arglist):
 
 
             if done or terminal:
-                mean_reward = np.mean(episode_rewards[-episode_step:])
+                mean_reward = episode_rewards[-1]
                 print("episode_rewards: %lf train_step: %d" % (np.mean(episode_rewards[-episode_step:]), train_step))
                 obs_n = env.reset()
                 episode_step = 0

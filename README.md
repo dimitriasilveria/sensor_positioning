@@ -3,3 +3,8 @@ This is the code for implementing the CCA algorithm presented in the paper: Deep
 Known dependencies: Python (3.5.4), OpenAI gym (0.10.5), tensorflow (2.3.1), numpy (1.18.5)
 Note:Please copy simple_coverage to the directory of multiagent-particle-envs/multiagent/scenarios/
 
+# Opening tensorboard
+`tensorboard --logdir .`
+
+# Training
+`python train.py`
