@@ -26,17 +26,19 @@ def make_update_exp(vals, target_vals):
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
-def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None):
+def p_train(make_obs_ph_n_dense,make_obs_ph_n_image, act_space_n, p_index, p_func, q_func, optimizer, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
 
         # set up placeholders
-        obs_ph_n = make_obs_ph_n
+        obs_ph_n_dense = make_obs_ph_n_dense
+        obs_ph_n_image = make_obs_ph_n_image
         act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
 
-        p_input = obs_ph_n[p_index]
-        p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]), scope="p_func", num_units=num_units)
+        p_input_dense = obs_ph_n_dense[p_index]
+        p_input_image = obs_ph_n_image[p_index]
+        p = p_func(p_input_dense, p_input_image, int(act_pdtype_n[p_index].param_shape()[0]), scope="p_func", num_units=num_units)
         p_func_vars = U.scope_vars(U.absolute_scope_name("p_func"))
 
         # wrap parameters in distribution
@@ -50,7 +52,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, grad
         # q_input = tf.concat([obs_ph_n ,act_input_n], 1)
         # if local_q_func:
         #     q_input = tf.concat([obs_ph_n[p_index], act_input_n[p_index]], 1)
-        q = q_func(obs_ph_n[0], act_input_n, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
+        q = q_func(obs_ph_n_dense[0],obs_ph_n_image[0], act_input_n, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
         pg_loss = -tf.reduce_mean(q)
 
         loss = pg_loss + p_reg * 1e-3
@@ -58,35 +60,36 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, grad
         optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, grad_norm_clipping)
 
         # Create callable functions
-        train = U.function(inputs=obs_ph_n + act_ph_n, outputs=loss, updates=[optimize_expr])
-        act = U.function(inputs=[obs_ph_n[p_index]], outputs=act_sample)
-        p_values = U.function([obs_ph_n[p_index]], p)
+        train = U.function(inputs=obs_ph_n_dense + obs_ph_n_image + act_ph_n, outputs=loss, updates=[optimize_expr])
+        act = U.function(inputs=[obs_ph_n_dense[p_index] , obs_ph_n_image[p_index]], outputs=act_sample)
+        p_values = U.function([obs_ph_n_dense[p_index] , obs_ph_n_image[p_index]], p)
 
         # target network
-        target_p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]), scope="target_p_func", num_units=num_units)
+        target_p = p_func(p_input_dense, p_input_image, int(act_pdtype_n[p_index].param_shape()[0]), scope="target_p_func", num_units=num_units)
         target_p_func_vars = U.scope_vars(U.absolute_scope_name("target_p_func"))
         update_target_p = make_update_exp(p_func_vars, target_p_func_vars)
 
         target_act_sample = act_pdtype_n[p_index].pdfromflat(target_p).sample()
-        target_act = U.function(inputs=[obs_ph_n[p_index]], outputs=target_act_sample)
+        target_act = U.function(inputs=[obs_ph_n_dense[p_index] , obs_ph_n_image[p_index]], outputs=target_act_sample)
 
         return act, train, update_target_p, {'p_values': p_values, 'target_act': target_act}
 
-def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64):
+def q_train(make_obs_ph_n_dense,make_obs_ph_n_image, act_space_n, q_index, q_func, optimizer, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64):
     with tf.compat.v1.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
 
         # set up placeholders
-        obs_ph_n = make_obs_ph_n
+        obs_ph_n_dense = make_obs_ph_n_dense
+        obs_ph_n_image = make_obs_ph_n_image
         act_ph_n = [act_pdtype_n[i].sample_placeholder([None], name="action"+str(i)) for i in range(len(act_space_n))]
         target_ph = tf.compat.v1.placeholder(tf.float32, [None], name="target")
 
         #q_input = tf.concat(obs_ph_n + act_ph_n, 1)
         if local_q_func:
-            q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
+            q_input = tf.concat([obs_ph_n_dense[q_index],obs_ph_n_image[q_index], act_ph_n[q_index]], 1)
         #for obs in  obs_ph_n
-        q = q_func(obs_ph_n[0], act_ph_n, 1, scope="q_func", num_units=num_units)[:,0]
+        q = q_func(obs_ph_n_dense[0],obs_ph_n_image[0], act_ph_n, 1, scope="q_func", num_units=num_units)[:,0]
 
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
 
@@ -97,14 +100,14 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
         loss = q_loss #+ 1e-3 * q_reg
         optimize_expr = U.minimize_and_clip(optimizer, loss, q_func_vars, grad_norm_clipping)
         # Create callable functions
-        train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph], outputs=loss, updates=[optimize_expr])
-        q_values = U.function(obs_ph_n + act_ph_n, q)
+        train = U.function(inputs=obs_ph_n_dense + obs_ph_n_image + act_ph_n + [target_ph], outputs=loss, updates=[optimize_expr])
+        q_values = U.function(obs_ph_n_dense + obs_ph_n_image + act_ph_n, q)
         # target network
-        target_q = q_func(obs_ph_n[0], act_ph_n, 1, scope="target_q_func", num_units=num_units)[:,0]
+        target_q = q_func(obs_ph_n_dense[0],obs_ph_n_image[0], act_ph_n, 1, scope="target_q_func", num_units=num_units)[:,0]
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)
 
-        target_q_values = U.function(obs_ph_n + act_ph_n, target_q)
+        target_q_values = U.function(obs_ph_n_dense + obs_ph_n_image + act_ph_n, target_q)
         return train, update_target_q, {'q_values': q_values, 'target_q_values': target_q_values}
 
 class MADDPGAgentTrainer(AgentTrainer):
@@ -113,13 +116,16 @@ class MADDPGAgentTrainer(AgentTrainer):
         self.n = len(obs_shape_n)
         self.agent_index = agent_index
         self.args = args
-        obs_ph_n = []
+        obs_ph_n_dense = []
+        obs_ph_n_image = []
         for i in range(self.n):
-            obs_ph_n.append(U.BatchInput(obs_shape_n[i], name="observation"+str(0)).get())
+            obs_ph_n_dense.append(U.BatchInput(obs_shape_n[i], name="observation"+str(0)).get())
+            obs_ph_n_image.append(U.BatchInput(obs_shape_n[i], name="observation"+str(0)).get())
         # Create all the functions necessary to train the model
         self.q_train, self.q_update, self.q_debug = q_train(
             scope=self.name,
-            make_obs_ph_n=obs_ph_n,
+            make_obs_ph_n_dense=obs_ph_n_dense,
+            make_obs_ph_n_image=obs_ph_n_image,
             act_space_n=act_space_n,
             q_index=agent_index,
             q_func=model_critic,
@@ -130,7 +136,8 @@ class MADDPGAgentTrainer(AgentTrainer):
         )
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
-            make_obs_ph_n=obs_ph_n,
+            make_obs_ph_n_dense=obs_ph_n_dense,
+            make_obs_ph_n_image=obs_ph_n_image,
             act_space_n=act_space_n,
             p_index=0,
             p_func=model_actor,

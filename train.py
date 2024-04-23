@@ -61,19 +61,21 @@ def parse_args():
     parser.add_argument("--plots-dir", type=str, default="./learning_curves/", help="directory where plot data is saved")
     return parser.parse_args()
 
-def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
-
-    with tf.variable_scope(scope, reuse=reuse):
+def mlp_actor(input_dense, input_image,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
+    # This model takes as input an observation and returns values of all actions
+    with tf.compat.v1.variable_scope(scope, reuse=reuse):
         # First convolutional layer with 16 kernels of size 5x5
-        conv1 = layers.conv2d(inputs=input, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
+        conv1 = layers.conv2d(inputs=input_image, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
         # Second convolutional layer with 16 kernels of size 5x5
         conv2 = layers.conv2d(inputs=conv1, filters=16, kernel_size=(5, 5), activation=tf.nn.relu, padding='same')
         
         # Flatten the output of the second convolutional layer
         flattened = layers.flatten(conv2)
-        
-        # First hidden layer with 256 units
-        hidden1 = layers.dense(flattened, units=256, activation=tf.nn.relu)
+        # Concatenate the flattened layer with another input
+        for input in input_dense:
+            concatenated_inputs = tf.concat([flattened,input],axis=1)
+        # First dense layer
+        hidden1 = layers.dense(concatenated_inputs, units=256, activation=tf.nn.relu)
         # Second hidden layer with 256 units
         hidden2 = layers.dense(hidden1, units=256, activation=tf.nn.relu)
         # Third hidden layer with 256 units
@@ -85,7 +87,7 @@ def mlp_actor(input, num_outputs, scope, reuse=False, num_units=64, rnn_cell=Non
         return output
 
 
-def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
+def mlp_critic(input_obs_image,input_obs_dense, input_act,num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
     # This model takes as input an observation and returns values of all actions
     with tf.compat.v1.variable_scope(scope, reuse=reuse):
         # First convolutional layer with 16 kernels of size 5x5
@@ -96,8 +98,8 @@ def mlp_critic(input_obs, input_act,num_outputs, scope, reuse=False, num_units=6
         # Flatten the output of the second convolutional layer
         flattened = layers.flatten(conv2)
         # Concatenate the flattened layer with another input
-        for input in input_act:
-            concatenated_inputs = tf.concat([flattened,input],axis=1)
+        for act,dense in zip(input_act,input_obs_dense):
+            concatenated_inputs = tf.concat([flattened,act,dense],axis=1)
         # First dense layer
         hidden1 = layers.dense(concatenated_inputs, units=256, activation=tf.nn.relu)
         # Second hidden layer with 256 units
@@ -120,7 +122,7 @@ def make_env(scenario_name, arglist, benchmark=False):
     # # create world
     # world = scenario.make_world()
     # create multiagent environment
-    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="image",reward_type='pov',seed=81,collaborative=True)
+    env = SurveyEnv(num_agents=1, num_obstacles=4, vision_dist=0.2, grid_resolution=10, grid_max_reward=1, reward_delta=0.01, observation_mode="hybrid",reward_type='pov',seed=81,collaborative=True)
     env.reset()
     return env
 
@@ -152,7 +154,10 @@ def train(arglist):
         env.reset()
         #env.render()
         # Create agent trainers
-        obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
+        print(env.observation_space[0].spaces.values)
+        input()
+        obs_dense_shape_n = [env.observation_space[i]['dense'].shape for i in range(env.n)]
+        input()
         num_adversaries = min(env.n, arglist.num_adversaries)
         trainers = get_trainers(env, num_adversaries, obs_shape_n, arglist)
 
